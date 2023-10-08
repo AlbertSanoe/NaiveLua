@@ -7,9 +7,24 @@ pub mod obj;
 pub mod vm;
 
 pub fn _main(state: &mut LuaState) -> usize {
-    let k = state.pop_bool().ok().unwrap();
-    let i = state.pop_integer().ok().unwrap();
+    let k = state.get_bool_fromtop(0).ok().unwrap();
+    let i = state.get_integer_fromtop(1).ok().unwrap();
     ss(k, i);
+    {
+        state.push_rfunc(tt1).ok().unwrap();
+        state.push_integer(9).ok().unwrap();
+        state.push_bool(false).ok().unwrap();
+        state.call(2,0);
+    }
+    state.clear_frame_stk(2).ok().unwrap();
+    return 0;
+}
+
+pub fn tt1(state: &mut LuaState)-> usize{
+    let k = state.get_bool_fromtop(0).ok().unwrap();
+    let i = state.get_integer_fromtop(1).ok().unwrap();
+    ss(k, i);
+    state.clear_frame_stk(2).ok().unwrap();
     return 0;
 }
 
@@ -22,7 +37,5 @@ fn main() {
     state.push_rfunc(_main).ok().unwrap();
     state.push_integer(99999).ok().unwrap();
     state.push_bool(true).ok().unwrap();
-    DEBUG!("stack size: {}",state.stack_size);
-    DEBUG!("stack_top_size: {}",state.stack_top_index);
     state.call(2, 0);
 }

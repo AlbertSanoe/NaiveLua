@@ -11,7 +11,6 @@ static mut MAINTHREAD: *mut LuaState = null_mut();
 
 fn start() -> Result<&'static mut LuaState, ErrCode> {
     let state = LuaState::mainthread_new(null_mut());
-    DEBUG!("the state is {:#?}", state.ok().unwrap());
     unsafe { MAINTHREAD = state? };
     unsafe { Ok(&mut *MAINTHREAD) }
 }
@@ -25,41 +24,39 @@ pub fn get_mainthread() -> Result<&'static mut LuaState, ErrCode> {
 }
 
 impl LuaState {
-    pub fn call(&mut self, narg: usize, sresults: isize) {
-        let func_index = self.get_stack_top() - (narg + 1);
-        DEBUG!("func_index is: {}", func_index);
-        self.call_unprotected(func_index, sresults);
-        //let last = self.pop_errcode();
+    pub fn call(&mut self, nargs: usize, sresults: isize) {
+        DEBUG!("func_index is: {}", self.get_stack_top() - (nargs + 1));
+        self.call_unprotected(nargs, sresults);
     }
 
-    fn call_unprotected(&mut self, func_index: usize, sresults: isize) {
-        let res = self.run(func_index, sresults);
+    fn call_unprotected(&mut self, nargs: usize, sresults: isize) {
+        let res = self.run(nargs, sresults);
     }
 
-    fn run(&mut self, func_index: usize, sresults: isize) -> Result<ErrCode, ErrCode> {
+    fn run(&mut self, nargs: usize, sresults: isize) -> Result<ErrCode, ErrCode> {
         if !self.calls_check() {
             todo!()
         }
-        self.pre_call(func_index, sresults)?;
+        self.pre_call(nargs, sresults)?;
 
         Ok(ErrCode(FINE))
     }
 
-    fn pre_call(&mut self, func_index: usize, sresults: isize) -> Result<ErrCode, ErrCode> {
+    fn pre_call(&mut self, nargs: usize, sresults: isize) -> Result<ErrCode, ErrCode> {
+        let func_index = self.get_stack_top() - (nargs + 1);
         DEBUG!("func_index: {}", func_index);
         DEBUG!("sresults: {}", sresults);
         // acquire the stack
-        let stack = self.get_stack_mut_ref()?;
+
         // acquire the object at the index func_index
-        let obj = stack.get_ref_elem(func_index)?;
+        let obj = self.get_stkelem_fromtop(nargs)?;
         if !obj.val_idx.is_function() {
             DEBUG!("error: is not function");
             return Err(ErrCode(MEMORY_TYPE_MISMATCH));
         }
-        DEBUG!("{}", obj.val_idx.into_inner());
         match obj.val_idx.into_inner() {
             T_LRF => {
-                let f = Option::<FFUNC>::into_inner(obj);
+                let f = Option::<FFUNC>::into_inner(&obj);
                 DEBUG!("{}", f.is_some());
                 if let Some(function) = f {
                     self.stack_check(LUA_MIN_STACK as usize)?;
@@ -67,9 +64,6 @@ impl LuaState {
                     DEBUG!("frame_index: {}", frame_index);
                     let rresults = function(self);
                     DEBUG!("rresults:{}", rresults);
-
-                    // Pop the function object from the stack
-                    let _function = self.pop_stack()?;
 
                     // check if the top edge exceeds the boundary
                     if !self.cframe_check_stkedge(frame_index, rresults as usize)? {

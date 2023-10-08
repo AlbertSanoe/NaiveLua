@@ -480,7 +480,7 @@ impl LuaState {
 
         DEBUG!("func_index: {}", func_index);
         DEBUG!("self.stack_top_index {}", self.stack_top_index);
-        DEBUG!("ci stack_top_index {}", ci.stack_upper_bound);
+        DEBUG!("ci stack_upper_bound {}", ci.stack_upper_bound);
 
         civ_ptr.swap_elem(self.ncalls, &mut ci)?;
         DEBUG!("previous call val:{}", self.ncalls);
@@ -488,14 +488,14 @@ impl LuaState {
         Ok(self.ncalls - 1)
     }
 
-    pub fn pop_frame(&mut self) -> Result<Frame, ErrCode> {
-        let mut empty_frame = Frame::default();
-        let frames= ptr_get!(self,frames)?;
-        frames.swap_elem(self.ncalls - 1, &mut empty_frame)?;
+    pub fn pop_frame(&mut self) -> Result<ErrCode, ErrCode> {
+        // let mut empty_frame = Frame::default();
+        let frames = ptr_get!(self, frames)?;
+        // frames.swap_elem(self.ncalls - 1, &mut empty_frame)?;
         self.ncalls -= 1;
-        let len= frames.decrease(self.ncalls)?;
-        DEBUG!("new len of frames is: {}",len);
-        Ok(empty_frame)
+        let len = frames.decrease(self.ncalls)?;
+        DEBUG!("new len of frames is: {}", len);
+        Ok(ErrCode(FINE))
     }
 
     pub fn cframe_check_stkedge(&self, index: usize, size: usize) -> Result<bool, ErrCode> {
@@ -606,11 +606,19 @@ impl LuaState {
         Ok(ErrCode(FINE))
     }
 
-    pub fn pop_stack(&mut self) -> Result<StkElem, ErrCode> {
-        let mut elem = StkElem::default();
-        ptr_get!(self, stack)?.swap_elem(self.stack_top_index - 1, &mut elem)?;
-        self.move_top(1, false);
-        Ok(elem)
+    pub fn clear_frame_stk(&mut self, nargs: usize) -> Result<ErrCode, ErrCode> {
+        for index in 0..nargs {
+            ptr_get!(self, stack)?
+                .get_mut_elem(self.stack_top_index - 1 - index)?
+                .val_idx = Default::default();
+        }
+        Ok(ErrCode(FINE))
+    }
+
+    #[inline(always)]
+    // start from 0
+    pub fn get_stkelem_fromtop(&mut self, step: usize) -> Result<StkElem, ErrCode> {
+        Ok(ptr_get!(self, stack)?.get_elem(self.stack_top_index - 1 - step)?)
     }
 
     pub fn cstack_clear(&mut self, index: usize) -> Result<ErrCode, ErrCode> {
@@ -625,13 +633,22 @@ impl LuaState {
         Ok(ErrCode(FINE))
     }
 
-    pub fn pop_errcode(&mut self) -> Result<ErrCode, ErrCode> {
-        let elem = self.pop_stack()?;
+    pub fn get_errcode_fromtop(&mut self, step: usize) -> Result<ErrCode, ErrCode> {
+        let elem = self.get_stkelem_fromtop(step)?;
         Ok(ErrCode::into_inner(&elem))
     }
 
-    pub fn pop_integer(&mut self) -> Result<INT, ErrCode> {
-        let elem = self.pop_stack()?;
+    pub fn get_rfunc_fromtop(&mut self, step: usize) -> Result<FFUNC, ErrCode> {
+        let elem = self.get_stkelem_fromtop(step)?;
+        if let Some(val) = Option::<FFUNC>::into_inner(&elem) {
+            Ok(val)
+        } else {
+            Err(ErrCode(MEMORY_TYPE_MISMATCH))
+        }
+    }
+
+    pub fn get_integer_fromtop(&mut self, step: usize) -> Result<INT, ErrCode> {
+        let elem = self.get_stkelem_fromtop(step)?;
         if let Some(val) = Option::<INT>::into_inner(&elem) {
             Ok(val)
         } else {
@@ -639,8 +656,8 @@ impl LuaState {
         }
     }
 
-    pub fn pop_float(&mut self) -> Result<FLT, ErrCode> {
-        let elem = self.pop_stack()?;
+    pub fn get_float_fromtop(&mut self, step: usize) -> Result<FLT, ErrCode> {
+        let elem = self.get_stkelem_fromtop(step)?;
         if let Some(val) = Option::<FLT>::into_inner(&elem) {
             Ok(val)
         } else {
@@ -648,8 +665,8 @@ impl LuaState {
         }
     }
 
-    pub fn pop_bool(&mut self) -> Result<bool, ErrCode> {
-        let elem = self.pop_stack()?;
+    pub fn get_bool_fromtop(&mut self, step: usize) -> Result<bool, ErrCode> {
+        let elem = self.get_stkelem_fromtop(step)?;
         if let Some(val) = Option::<bool>::into_inner(&elem) {
             Ok(val)
         } else {
@@ -657,8 +674,8 @@ impl LuaState {
         }
     }
 
-    pub fn pop_nil(&mut self) -> Result<(), ErrCode> {
-        let elem = self.pop_stack()?;
+    pub fn get_nil_fromtop(&mut self, step: usize) -> Result<(), ErrCode> {
+        let elem = self.get_stkelem_fromtop(step)?;
         if let Some(val) = Option::<()>::into_inner(&elem) {
             Ok(val)
         } else {
@@ -666,8 +683,8 @@ impl LuaState {
         }
     }
 
-    pub fn pop_ud(&mut self) -> Result<*mut (), ErrCode> {
-        let elem = self.pop_stack()?;
+    pub fn get_ud_fromtop(&mut self, step: usize) -> Result<*mut (), ErrCode> {
+        let elem = self.get_stkelem_fromtop(step)?;
         if let Some(val) = Option::<*mut ()>::into_inner(&elem) {
             Ok(val)
         } else {
